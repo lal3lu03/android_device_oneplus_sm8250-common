@@ -4,6 +4,9 @@
 //
 
 soong_namespace {
+    imports: [
+        "hardware/qcom-caf/wlan",
+    ]
 }
 
 install_symlink {
