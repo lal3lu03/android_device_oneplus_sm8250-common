@@ -32,12 +32,57 @@ void OverrideProperty(const char* name, const char* value) {
     }
 }
 
+static std::string GetBootArgValue(const std::string& cmdline, const std::string& key) {
+    const std::string token = key + "=";
+    const auto start_pos = cmdline.find(token);
+    if (start_pos == std::string::npos) {
+        return "";
+    }
+
+    const auto value_start = start_pos + token.size();
+    const auto value_end = cmdline.find(' ', value_start);
+    if (value_end == std::string::npos) {
+        return cmdline.substr(value_start);
+    }
+    return cmdline.substr(value_start, value_end - value_start);
+}
+
+static void OverrideBootStatePropertiesFromKernelCmdline() {
+    std::string cmdline;
+    if (!ReadFileToString("/proc/cmdline", &cmdline) || cmdline.empty()) {
+        LOG(WARNING) << "Unable to read /proc/cmdline for boot state override";
+        return;
+    }
+
+    auto verifiedbootstate = GetBootArgValue(cmdline, "androidboot.verifiedbootstate");
+    if (verifiedbootstate.empty()) {
+        LOG(WARNING) << "androidboot.verifiedbootstate missing from kernel cmdline";
+        return;
+    }
+
+    OverrideProperty("ro.boot.verifiedbootstate", verifiedbootstate.c_str());
+
+    auto vbmeta_device_state = GetBootArgValue(cmdline, "androidboot.vbmeta.device_state");
+    if (vbmeta_device_state.empty()) {
+        vbmeta_device_state = verifiedbootstate == "orange" ? "unlocked" : "locked";
+    }
+    OverrideProperty("ro.boot.vbmeta.device_state", vbmeta_device_state.c_str());
+
+    auto flash_locked = GetBootArgValue(cmdline, "androidboot.flash.locked");
+    if (flash_locked.empty()) {
+        flash_locked = verifiedbootstate == "orange" ? "0" : "1";
+    }
+    OverrideProperty("ro.boot.flash.locked", flash_locked.c_str());
+}
+
 /*
  * Only for read-only properties. Properties that can be wrote to more
  * than once should be set in a typical init script (e.g. init.oplus.hw.rc)
  * after the original property has been set.
  */
 void vendor_load_properties() {
+    OverrideBootStatePropertiesFromKernelCmdline();
+
     auto device = GetProperty("ro.product.product.device", "");
     auto rf_version = std::stoi(GetProperty("ro.boot.rf_version", "0"));
 
